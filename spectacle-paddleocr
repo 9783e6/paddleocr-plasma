@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+VENV="$HOME/.local/share/paddle-ocr/venv"
+TMP="$(mktemp --suffix=.png)"
+trap 'rm -f "$TMP"' EXIT
+
+spectacle --background --region --release-capture --nonotify --output "$TMP"
+
+for _ in {1..30}; do
+    [[ -s "$TMP" ]] && break
+    sleep 0.1
+done
+
+if [[ ! -s "$TMP" ]]; then
+    notify-send "PaddleOCR" "No screenshot captured."
+    exit 1
+fi
+
+"$VENV/bin/python" - "$TMP" <<'PY' | wl-copy
+import sys
+import json
+from paddleocr import PaddleOCR
+
+ocr = PaddleOCR(
+    use_doc_orientation_classify=False,
+    use_doc_unwarping=False,
+    use_textline_orientation=False,
+    enable_mkldnn=False,
+)
+
+for result in ocr.predict(sys.argv[1]):
+    data = result.json
+    if isinstance(data, str):
+        data = json.loads(data)
+    data = data.get("res", data)
+    print("\n".join(data.get("rec_texts", [])))
+PY
+
+notify-send "PaddleOCR" "Text copied to clipboard"
